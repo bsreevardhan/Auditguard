@@ -151,9 +151,9 @@ def run_script(request, *args, **kwargs):
             # Prepare script base command once
             os_name = platform.system()
             script_base = (
-                ['powershell', '-Command']
+                ["powershell","-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
                 if os_name == "Windows"
-                else ["bash", "-c"]
+                else ["sudo","bash", "-c"]
                 if os_name == "Linux"
                 else None
             )
@@ -238,13 +238,17 @@ def run_script(request, *args, **kwargs):
 def script_runner(script_base, command, policy_data):
     try:
         script = script_base + [command]
-        result = subprocess.Popen(
+        result = subprocess.run(
             script,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
         )
-        stdout, stderr = result.communicate()
+        stdout=stderr=None
+        if result.returncode == 0:
+            stdout=result.stdout
+        else:
+            stderr = result.stderr
         return {
             'policy_data': policy_data,
             'checked_status': (
