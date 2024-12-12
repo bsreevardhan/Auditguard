@@ -370,6 +370,58 @@ def get_os_index(os_data, system_info):
             return os_data.iloc[i].id
     return -1
 
+def get_standalone_policy(level_list):
+    try:
+        policies = []
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        base_path = os.path.join(current_dir, "..", "policies")
+        
+        # Map level names to file patterns
+        level_file_map = {
+            'L1': "Windows_11_Standalone_2.0.0(L1).py",
+            'L2': "Windows_11_Standalone_2.0.0(L2).py",
+            'BL': "Windows_11_Standalone_2.0.0(BL).py"
+        }
+        
+        # Process each requested level
+        for level in level_list:
+            if level not in level_file_map:
+                continue
+                
+            policy_file = os.path.join(base_path, level_file_map[level])
+            
+            if not os.path.exists(policy_file):
+                print(f"Policy file not found at: {policy_file}")
+                continue
+
+            # Read the Python file content
+            with open(policy_file, 'r') as file:
+                policy_data = {}
+                exec(file.read(), policy_data)
+                
+                code_list = policy_data.get('code', [])
+                cis_indices = policy_data.get('cis_indices', [])
+                title = policy_data.get('title',[])
+
+                for i, (code, cis_index) in enumerate(zip(code_list, cis_indices)):
+                    policies.append({
+                        'id': i + 1,
+                        'cis_index': cis_index,
+                        'title': title,
+                        'level': level,
+                        'command': code
+                    })
+
+        # Convert to DataFrame
+        df = pd.DataFrame(policies) if policies else pd.DataFrame()
+        print(df)
+        return df
+
+    except Exception as e:
+        print(f"Error in get_standalone_policy: {str(e)}")
+        return pd.DataFrame()
+            
+
 #api endpoint to get the policies of the particular os 
 @api_view(['GET'])
 def get_policy(request, *args, **kwargs):
@@ -389,18 +441,43 @@ def get_policy(request, *args, **kwargs):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        conn = create_engine(settings.CONNECTION_STRING)
-        with conn.connect() as connection:
-            if group:
-                policy = get_os_policy(system_config.os_index, connection, group=group)
-            else:
-                level_list = level.split(',')
-                policy = get_os_policy(system_config.os_index, connection, level=level_list)
+        policy = {}
+        level_list = level.split(',') if level else []
+        
+        # Handle standalone version
+        if system_config.os_index == 2:
+            print("standalone")
+            policy_df = get_standalone_policy(level_list)
+            if policy_df.empty:
+                return Response(
+                    {"error": "No standalone policies found for the specified level"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
             
-            if policy.empty:
-                return Response({"error": "No policies found"}, status=status.HTTP_404_NOT_FOUND)
+            # Format response for standalone policies
+            policies = policy_df[['cis_index', 'title', 'level','version']].to_dict('records')
+            print(policies)
+            return Response({
+                "policies": policies,
+                "total_policies": len(policies)
+            }, status=status.HTTP_200_OK)
+        
+        # Handle non-standalone version
+        else:
+            conn = create_engine(settings.CONNECTION_STRING)
+            with conn.connect() as connection:
+                if group:
+                    policy = get_os_policy(system_config.os_index, connection, group=group)
+                else:
+                    policy = get_os_policy(system_config.os_index, connection, level=level_list)
                 
-            return Response({"policies": policy}, status=status.HTTP_200_OK)
+                if policy.empty:
+                    return Response({"error": "No policies found"}, status=status.HTTP_404_NOT_FOUND)
+                
+                return Response({
+                    "policies": policy.to_dict('records'),
+                    "total_policies": len(policy)
+                }, status=status.HTTP_200_OK)
             
     except UserSystemConfig.DoesNotExist:
         return Response(
@@ -443,6 +520,7 @@ def get_specific_policy(request, *args, **kwargs):
                 {"error": "No matching OS configuration found. Please run system detection first."},
                 status=status.HTTP_404_NOT_FOUND
             )
+        
             
         conn = create_engine(settings.CONNECTION_STRING)
         with conn.connect() as connection:
