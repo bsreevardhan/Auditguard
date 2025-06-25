@@ -215,7 +215,8 @@ def run_bl_11_std():
     print(f"Compliance Percentage: {(pass_count / (pass_count + fail_count)) * 100:.2f}%")
     print(f"Audit report saved to {filename}")
 
-# Run the compliance audit
+run_bl_11_std()
+
 
 
         

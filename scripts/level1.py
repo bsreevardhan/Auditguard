@@ -1062,4 +1062,5 @@ def run_l1_11_std():
     print(f"Compliance Percentage: {(pass_count / (pass_count + fail_count)) * 100:.2f}%")
     print(f"Audit report saved to {filename}")
 
+run_l1_11_std()
 print(len(title),len(cis_index),len(code))
